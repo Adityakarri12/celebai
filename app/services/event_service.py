@@ -20,6 +20,10 @@ from app.models.event import (
     EventType,
     VendorStatus,
     BudgetCategory,
+    TableGuestInfo,
+    TableInfo,
+    TableSeatingSummary,
+    EmergencyCoordinatorKit,
 )
 from app.models.ai import AIPromptRequest
 from app.services.ai_planner import AIPlannerService
@@ -30,7 +34,7 @@ class EventService:
 
     def __init__(self) -> None:
         self._events: Dict[str, EventPlan] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._initialize_seed_data()
 
     def _initialize_seed_data(self) -> None:
@@ -527,6 +531,186 @@ class EventService:
             event.ideas.append(idea)
             event.updated_at = datetime.now(timezone.utc).isoformat()
             return idea
+
+
+    # Seating & Capacity Analytics
+    def get_table_seating_summary(self, event_id: str, seats_per_table: int = 10) -> Optional[TableSeatingSummary]:
+        """
+        Calculate table occupancy rates, guest distribution, and dietary flags per table.
+
+        Args:
+            event_id: Unique event identifier.
+            seats_per_table: Max capacity per table (default: 10).
+
+        Returns:
+            TableSeatingSummary or None if event not found.
+        """
+        with self._lock:
+            event = self._events.get(event_id)
+            if not event:
+                return None
+
+            tables_map: Dict[int, TableInfo] = {}
+            unseated_count = 0
+            seated_count = 0
+            dietary_totals: Dict[str, int] = {}
+
+            for guest in event.guests:
+                # Track global dietary needs
+                diet = guest.dietary if guest.dietary else "Standard"
+                dietary_totals[diet] = dietary_totals.get(diet, 0) + guest.party_size
+
+                if guest.table_number and guest.table_number > 0:
+                    t_num = guest.table_number
+                    if t_num not in tables_map:
+                        tables_map[t_num] = TableInfo(
+                            table_number=t_num,
+                            max_seats=seats_per_table,
+                            occupied_seats=0,
+                            available_seats=seats_per_table,
+                            occupancy_percentage=0.0,
+                            dietary_alerts=[],
+                            guests=[],
+                        )
+                    table = tables_map[t_num]
+                    table.guests.append(
+                        TableGuestInfo(
+                            name=guest.name,
+                            party_size=guest.party_size,
+                            dietary=diet,
+                            rsvp_status=guest.rsvp_status,
+                        )
+                    )
+                    table.occupied_seats += guest.party_size
+                    table.available_seats = max(0, table.max_seats - table.occupied_seats)
+                    table.occupancy_percentage = round((table.occupied_seats / table.max_seats) * 100, 1)
+                    if diet != "Standard" and diet not in table.dietary_alerts:
+                        table.dietary_alerts.append(f"{diet} ({guest.name})")
+                    seated_count += guest.party_size
+                else:
+                    unseated_count += guest.party_size
+
+            sorted_tables = [tables_map[k] for k in sorted(tables_map.keys())]
+            total_seats_capacity = len(sorted_tables) * seats_per_table
+            utilization = round((seated_count / total_seats_capacity * 100), 1) if total_seats_capacity > 0 else 0.0
+
+            return TableSeatingSummary(
+                total_tables=len(sorted_tables),
+                total_seated_guests=seated_count,
+                total_unseated_guests=unseated_count,
+                capacity_utilization_rate=utilization,
+                dietary_summary=dietary_totals,
+                tables=sorted_tables,
+            )
+
+    def auto_assign_tables(self, event_id: str, seats_per_table: int = 8) -> Optional[TableSeatingSummary]:
+        """
+        Intelligently assign unseated guests to reception tables respecting party sizes.
+
+        Args:
+            event_id: Unique event identifier.
+            seats_per_table: Target capacity per table.
+
+        Returns:
+            Updated TableSeatingSummary.
+        """
+        with self._lock:
+            event = self._events.get(event_id)
+            if not event:
+                return None
+
+            current_table = 1
+            current_occupancy = 0
+
+            # Sort unseated guests or re-assign seamlessly
+            for guest in event.guests:
+                if not guest.table_number or guest.table_number <= 0:
+                    if current_occupancy + guest.party_size > seats_per_table:
+                        current_table += 1
+                        current_occupancy = 0
+                    guest.table_number = current_table
+                    current_occupancy += guest.party_size
+
+            event.updated_at = datetime.now(timezone.utc).isoformat()
+
+        return self.get_table_seating_summary(event_id, seats_per_table=seats_per_table)
+
+    def get_emergency_coordinator_kit(self, event_id: str) -> Optional[EmergencyCoordinatorKit]:
+        """
+        Compile an all-in-one Day-of Emergency Coordinator Briefing Kit.
+
+        Args:
+            event_id: Unique event identifier.
+
+        Returns:
+            EmergencyCoordinatorKit containing contacts, cues, seating, and dietary flags.
+        """
+        with self._lock:
+            event = self._events.get(event_id)
+            if not event:
+                return None
+
+            # 1. Emergency Vendor Contacts
+            vendor_contacts = []
+            for v in event.vendors:
+                vendor_contacts.append({
+                    "name": v.name,
+                    "category": v.category,
+                    "contact_person": v.contact_name or "Manager on Duty",
+                    "phone_or_email": v.phone or v.email or "On File",
+                    "status": v.status.value,
+                    "actual_paid": v.actual_paid or 0.0,
+                    "deposit_paid": v.status in (VendorStatus.DEPOSIT_PAID, VendorStatus.FULLY_PAID),
+                    "notes": v.notes or "None",
+                })
+
+            # 2. Critical Day-of Cues (sorted by time)
+            day_of_cues = []
+            for t in sorted(event.timeline_items, key=lambda x: x.order):
+                if t.phase.value == "day_of":
+                    day_of_cues.append({
+                        "time": t.time_or_offset,
+                        "cue": t.title,
+                        "owner": t.owner or "Lead Coordinator",
+                        "description": t.description or "",
+                    })
+
+            # 3. Dietary Safety Alert Matrix
+            dietary_safety: Dict[str, List[str]] = {}
+            vip_tables: List[Dict[str, Any]] = []
+
+            for g in event.guests:
+                diet = g.dietary if g.dietary else "Standard"
+                if diet != "Standard":
+                    if diet not in dietary_safety:
+                        dietary_safety[diet] = []
+                    dietary_safety[diet].append(f"{g.name} (Table {g.table_number or 'Unassigned'})")
+
+            # 4. VIP Seating summary
+            table_summary = self.get_table_seating_summary(event_id)
+            if table_summary:
+                for t in table_summary.tables:
+                    vip_tables.append({
+                        "table_number": t.table_number,
+                        "headcount": t.occupied_seats,
+                        "dietary_alerts": t.dietary_alerts,
+                        "primary_guests": [g.name for g in t.guests[:3]],
+                    })
+
+            return EmergencyCoordinatorKit(
+                event_id=event.id,
+                event_title=event.title,
+                event_type=event.event_type.value,
+                date=event.date or "TBD",
+                location=event.location or "TBD",
+                total_budget=event.total_budget,
+                currency=event.currency,
+                coordinator_notes="Master Day-of Emergency Protocol Sheet. Keep readily accessible to venue captain and lead coordinator.",
+                emergency_vendor_contacts=vendor_contacts,
+                critical_day_of_cues=day_of_cues,
+                dietary_safety_roster=dietary_safety,
+                vip_tables_summary=vip_tables,
+            )
 
 
 event_service = EventService()

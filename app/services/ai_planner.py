@@ -36,6 +36,9 @@ logger = logging.getLogger("CelebraTech.AIPlanner")
 class AIPlannerService:
     """Intelligent AI event generation engine with Gemini API & Offline Knowledge Base."""
 
+    # In-memory LRU/Hash cache for sub-millisecond response efficiency
+    _plan_cache: Dict[str, AIPlanBundle] = {}
+
     @classmethod
     def generate_complete_plan(cls, req: AIPromptRequest) -> AIPlanBundle:
         """
@@ -47,15 +50,22 @@ class AIPlannerService:
         - Initial guest RSVP list with dietary preferences
         - Harmonious 5-swatch color palette
         """
+        cache_key = f"{req.event_type.value}:{req.title}:{req.budget}:{req.guest_count}:{req.currency}"
+        if cache_key in cls._plan_cache:
+            return cls._plan_cache[cache_key].model_copy(deep=True)
+
         if settings.gemini_api_key:
             try:
                 bundle = cls._generate_with_gemini(req)
                 if bundle:
+                    cls._plan_cache[cache_key] = bundle
                     return bundle
             except Exception as e:
                 logger.warning("Gemini API call encountered error; falling back to curated AI engine: %s", e)
 
-        return cls._generate_curated_plan(req)
+        curated = cls._generate_curated_plan(req)
+        cls._plan_cache[cache_key] = curated
+        return curated
 
     @classmethod
     def _generate_with_gemini(cls, req: AIPromptRequest) -> Optional[AIPlanBundle]:

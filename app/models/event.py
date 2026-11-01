@@ -208,7 +208,7 @@ class GuestItem(BaseModel):
     party_size: int = Field(default=1, ge=1, le=30)
     rsvp_status: GuestRSVPStatus = Field(default=GuestRSVPStatus.PENDING)
     dietary: str = Field(default="Standard", max_length=100)
-    table_number: Optional[int] = Field(default=None, ge=1, le=200)
+    table_number: Optional[int] = Field(default=None, ge=0, le=200)
     email_or_phone: Optional[str] = Field(default=None, max_length=100)
     notes: Optional[str] = Field(default=None, max_length=300)
 
@@ -313,3 +313,48 @@ class EventUpdateRequest(BaseModel):
     currency: Optional[str] = None
     theme: Optional[str] = None
     vibe: Optional[str] = None
+
+
+class TableGuestInfo(BaseModel):
+    """Guest overview within a seating table."""
+    name: str
+    party_size: int = 1
+    dietary: str = "Standard"
+    rsvp_status: GuestRSVPStatus = GuestRSVPStatus.CONFIRMED
+
+
+class TableInfo(BaseModel):
+    """Status and guest roster for a single reception table."""
+    table_number: int
+    max_seats: int = 10
+    occupied_seats: int = 0
+    available_seats: int = 10
+    occupancy_percentage: float = 0.0
+    dietary_alerts: List[str] = Field(default_factory=list)
+    guests: List[TableGuestInfo] = Field(default_factory=list)
+
+
+class TableSeatingSummary(BaseModel):
+    """Comprehensive visual seating distribution and capacity analytics."""
+    total_tables: int = 0
+    total_seated_guests: int = 0
+    total_unseated_guests: int = 0
+    capacity_utilization_rate: float = 0.0
+    dietary_summary: Dict[str, int] = Field(default_factory=dict)
+    tables: List[TableInfo] = Field(default_factory=list)
+
+
+class EmergencyCoordinatorKit(BaseModel):
+    """Day-of event coordinator emergency briefing pack."""
+    event_id: str
+    event_title: str
+    event_type: str
+    date: str
+    location: str
+    total_budget: float
+    currency: str
+    coordinator_notes: str
+    emergency_vendor_contacts: List[Dict[str, Any]] = Field(default_factory=list)
+    critical_day_of_cues: List[Dict[str, Any]] = Field(default_factory=list)
+    dietary_safety_roster: Dict[str, List[str]] = Field(default_factory=dict)
+    vip_tables_summary: List[Dict[str, Any]] = Field(default_factory=list)

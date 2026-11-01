@@ -20,6 +20,8 @@ from app.models.event import (
     PersonalizedIdeaItem,
     GuestItem,
     GuestRSVPStatus,
+    TableSeatingSummary,
+    EmergencyCoordinatorKit,
 )
 from app.services.event_service import event_service
 from app.services.budget_service import BudgetService
@@ -372,3 +374,55 @@ async def export_guests_csv(event_id: str) -> PlainTextResponse:
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="guests_{event_id}.csv"'},
     )
+
+
+@router.get("/{event_id}/seating", response_model=TableSeatingSummary)
+async def get_seating_summary(event_id: str, seats_per_table: int = Query(default=10, ge=2, le=30)) -> TableSeatingSummary:
+    """Retrieve visual table distribution, capacity utilization, and dietary warnings."""
+    summary = event_service.get_table_seating_summary(event_id, seats_per_table=seats_per_table)
+    if not summary:
+        raise HTTPException(status_code=404, detail="Event plan not found.")
+    return summary
+
+
+@router.post("/{event_id}/seating/auto-assign", response_model=TableSeatingSummary)
+async def auto_assign_seating(event_id: str, seats_per_table: int = Query(default=8, ge=2, le=20)) -> TableSeatingSummary:
+    """Auto-assign unseated guests into balanced table clusters."""
+    summary = event_service.auto_assign_tables(event_id, seats_per_table=seats_per_table)
+    if not summary:
+        raise HTTPException(status_code=404, detail="Event plan not found.")
+    return summary
+
+
+@router.get("/{event_id}/coordinator-kit", response_model=EmergencyCoordinatorKit)
+async def get_coordinator_kit(event_id: str) -> EmergencyCoordinatorKit:
+    """Download Day-of Master Emergency Coordinator Briefing Kit."""
+    kit = event_service.get_emergency_coordinator_kit(event_id)
+    if not kit:
+        raise HTTPException(status_code=404, detail="Event plan not found.")
+    return kit
+
+
+class BudgetPresetPayload(BaseModel):
+    """Payload to trigger budget preset reallocation."""
+    preset: str = Field(default="balanced", description="'frugal', 'balanced', or 'luxury'")
+    total_budget: Optional[float] = Field(default=None, ge=0.0)
+
+
+@router.post("/{event_id}/budget/preset", response_model=List[BudgetItem])
+async def apply_budget_preset(event_id: str, payload: BudgetPresetPayload) -> List[BudgetItem]:
+    """Rebalance event budget according to a strategic preset profile."""
+    event = event_service.get_event(event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Event plan not found.")
+    target_budget = payload.total_budget if payload.total_budget is not None else event.total_budget
+    new_items = BudgetService.apply_budget_preset(
+        total_budget=target_budget,
+        event_type=event.event_type,
+        preset_strategy=payload.preset,
+        guest_count=event.guest_count,
+    )
+    event.budget_items = new_items
+    if payload.total_budget is not None:
+        event.total_budget = payload.total_budget
+    return new_items

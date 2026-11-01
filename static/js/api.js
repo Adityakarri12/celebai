@@ -195,6 +195,28 @@ const API = {
     });
   },
 
+  // Seating & Emergency Coordinator Kit
+  getSeatingSummary(eventId, seatsPerTable = 10) {
+    return this.request(`/api/events/${eventId}/seating?seats_per_table=${seatsPerTable}`);
+  },
+
+  autoAssignSeating(eventId, seatsPerTable = 8) {
+    return this.request(`/api/events/${eventId}/seating/auto-assign?seats_per_table=${seatsPerTable}`, {
+      method: "POST",
+    });
+  },
+
+  getCoordinatorKit(eventId) {
+    return this.request(`/api/events/${eventId}/coordinator-kit`);
+  },
+
+  applyBudgetPreset(eventId, preset, totalBudget = null) {
+    return this.request(`/api/events/${eventId}/budget/preset`, {
+      method: "POST",
+      body: JSON.stringify({ preset, total_budget: totalBudget }),
+    });
+  },
+
   // Export triggers
   downloadExport(eventId, type) {
     const endpoints = {

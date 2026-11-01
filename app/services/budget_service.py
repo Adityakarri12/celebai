@@ -305,3 +305,50 @@ class BudgetService:
             )
 
         return items
+
+    @classmethod
+    def apply_budget_preset(
+        cls,
+        total_budget: float,
+        event_type: EventType,
+        preset_strategy: str = "balanced",
+        guest_count: int = 50,
+    ) -> List[BudgetItem]:
+        """
+        Rebalance budget allocations based on chosen strategy profile:
+        - 'frugal' / 'smart_saver': Prioritizes food & essential venue, trims luxury decor and favors.
+        - 'balanced': Standard balanced industry benchmark.
+        - 'luxury' / 'grand': Elevates floral, photo/video, entertainment, and bespoke guest experience.
+
+        Args:
+            total_budget: Target spending ceiling.
+            event_type: Celebration category.
+            preset_strategy: 'frugal', 'balanced', or 'luxury'.
+            guest_count: Expected attendees.
+
+        Returns:
+            List of calibrated BudgetItem instances.
+        """
+        base_items = cls.generate_starter_budget(total_budget, event_type, guest_count)
+        strategy = preset_strategy.lower().strip()
+
+        if strategy in ("frugal", "smart_saver", "diy"):
+            # Shift 8% from decor/favors into contingency buffer
+            for item in base_items:
+                if item.category in (BudgetCategory.DECOR.value, BudgetCategory.FAVORS.value):
+                    item.estimated_cost = round(item.estimated_cost * 0.70, 2)
+                    item.notes = "Frugal Strategy: DIY / trimmed optional decor elements"
+                elif item.category == BudgetCategory.MISCELLANEOUS.value:
+                    item.estimated_cost = round(item.estimated_cost * 1.30, 2)
+                    item.notes = "Frugal Strategy: Boosted emergency contingency reserve"
+        elif strategy in ("luxury", "grand", "vip"):
+            # Shift resources towards high-impact visuals and entertainment
+            for item in base_items:
+                if item.category in (BudgetCategory.DECOR.value, BudgetCategory.PHOTOGRAPHY.value, BudgetCategory.ENTERTAINMENT.value):
+                    item.estimated_cost = round(item.estimated_cost * 1.25, 2)
+                    item.notes = "Luxury Strategy: Premium tier florals, lighting & live production"
+                elif item.category == BudgetCategory.FAVORS.value:
+                    item.estimated_cost = round(item.estimated_cost * 1.40, 2)
+                    item.notes = "Luxury Strategy: Custom curated keepsake gift boxes"
+
+        return base_items

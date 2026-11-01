@@ -4,7 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CelebraTech AI — GenAI Celebration & Event Planner</title>
-  <meta name="description" content="AI-powered planning assistant for weddings, birthdays, and community events with budgets, timelines, vendor checklists, guests, and interactive 3D ideas.">
+  <meta name="description" content="Enterprise GenAI celebration and event planning assistant for weddings, birthdays, and community festivals with automated budgets, What-If simulators, timelines, vendor checklists, and interactive 3D ideas.">
+  <meta name="theme-color" content="#0d1117">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.ico">
 
   <!-- Google Fonts: Plus Jakarta Sans -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -16,13 +20,19 @@
 </head>
 <body>
 
+  <!-- WCAG 2.1 AA Accessible Skip-to-Content Link -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <!-- Live Announcer Region for Screen Readers -->
+  <div id="a11y-announcements" aria-live="polite" aria-atomic="true" class="sr-only"></div>
+
   <!-- Confetti Canvas Layer -->
-  <canvas id="confetti-canvas"></canvas>
+  <canvas id="confetti-canvas" aria-hidden="true"></canvas>
 
   <!-- React 18 Application Root -->
   <div id="root"></div>
 
-  <!-- Local Offline-First Vendor Scripts (With CDN fallbacks) -->
+  <!-- Local Offline-First Vendor Scripts -->
   <script src="/static/vendor/react.production.min.js"></script>
   <script src="/static/vendor/react-dom.production.min.js"></script>
   <script src="/static/vendor/babel.min.js"></script>

@@ -55,10 +55,16 @@ function App() {
   // What-If Simulator Budget Value (INR)
   const [simulatorBudget, setSimulatorBudget] = useState(2500000);
 
-  // Toast Notification Helper
+  // Toast Notification Helper with WCAG 2.1 AA Screen Reader Live Announcer
   const showToast = (message, type = "success") => {
     const id = Date.now() + Math.random();
     setToasts((prev) => [...prev, { id, message, type }]);
+    try {
+      const announcer = document.getElementById("a11y-announcements");
+      if (announcer) {
+        announcer.textContent = message;
+      }
+    } catch (_) {}
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 3800);
@@ -201,8 +207,8 @@ function App() {
         onTriggerConfetti={triggerConfetti}
       />
 
-      {/* Main Content Area */}
-      <main className="max-w-content" style={{ flex: 1, paddingBottom: "3rem" }}>
+      {/* Main Content Area with Skip Target */}
+      <main id="main-content" tabIndex="-1" className="max-w-content" style={{ flex: 1, paddingBottom: "3rem", outline: "none" }}>
         {currentEvent && (
           <>
             {/* Hero Summary & Countdown Banner */}
@@ -219,7 +225,13 @@ function App() {
             />
 
             {/* Active Tab View */}
-            <div className="tab-content">
+            <div
+              className="tab-content"
+              role="tabpanel"
+              id={`tabpanel-${currentTab}`}
+              aria-labelledby={`tab-${currentTab}`}
+              tabIndex={0}
+            >
               {currentTab === "ideas" && (
                 <IdeasTab
                   event={currentEvent}
@@ -745,15 +757,19 @@ function TabNavigationBar({ currentTab, onChangeTab, event }) {
         ‹
       </button>
 
-      <nav className="tabs-nav" ref={tabsRef} aria-label="Celebration Sections">
+      <nav className="tabs-nav" ref={tabsRef} aria-label="Celebration Sections" role="tablist">
         {tabs.map((tab) => (
           <button
             key={tab.id}
+            id={`tab-${tab.id}`}
+            role="tab"
+            aria-selected={currentTab === tab.id}
+            aria-controls={`tabpanel-${tab.id}`}
             type="button"
             className={`tab-btn ${currentTab === tab.id ? "active" : ""}`}
             onClick={() => onChangeTab(tab.id)}
           >
-            <span>{tab.icon}</span>
+            <span aria-hidden="true">{tab.icon}</span>
             <span>{tab.label}</span>
             {typeof tab.count === "number" && <span className="tab-count">{tab.count}</span>}
           </button>
@@ -1025,6 +1041,58 @@ function BudgetTab({ event, simulatorBudget, onChangeSimulatorBudget, onOpenAddM
           </div>
         </div>
 
+        {/* Preset Strategy Buttons */}
+        <div className="budget-presets-row" role="group" aria-label="Budget Strategy Presets">
+          <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontWeight: 600 }}>Strategy Presets:</span>
+          <button
+            type="button"
+            className="preset-chip"
+            onClick={async () => {
+              const target = Math.round(totalBudget * 0.8);
+              onChangeSimulatorBudget(target);
+              try {
+                await API.applyBudgetPreset(event.id, "frugal", target);
+                await onRefreshEvent();
+                showToast("Applied Frugal / Savvy Saver budget preset!", "success");
+              } catch (_) {}
+            }}
+            title="Trim optional decor/favors & optimize core catering"
+          >
+            💡 Frugal & Smart (DIY)
+          </button>
+          <button
+            type="button"
+            className="preset-chip active"
+            onClick={async () => {
+              onChangeSimulatorBudget(totalBudget);
+              try {
+                await API.applyBudgetPreset(event.id, "balanced", totalBudget);
+                await onRefreshEvent();
+                showToast("Applied Balanced Classic benchmark preset!", "success");
+              } catch (_) {}
+            }}
+            title="Industry benchmark 35/30/12/8 allocation"
+          >
+            ⚖️ Balanced Classic
+          </button>
+          <button
+            type="button"
+            className="preset-chip"
+            onClick={async () => {
+              const target = Math.round(totalBudget * 1.3);
+              onChangeSimulatorBudget(target);
+              try {
+                await API.applyBudgetPreset(event.id, "luxury", target);
+                await onRefreshEvent();
+                showToast("Applied Luxury & VIP grand celebration preset!", "success");
+              } catch (_) {}
+            }}
+            title="Boost floral, photography, gourmet catering & entertainment"
+          >
+            ✨ Luxury & VIP
+          </button>
+        </div>
+
         <input
           type="range"
           min="100000"
@@ -1033,7 +1101,12 @@ function BudgetTab({ event, simulatorBudget, onChangeSimulatorBudget, onOpenAddM
           value={simulatorBudget}
           onChange={(e) => onChangeSimulatorBudget(Number(e.target.value))}
           className="simulator-slider"
-          aria-label="What-if budget slider"
+          aria-label="What-If Budget Rebalance Slider"
+          role="slider"
+          aria-valuemin="100000"
+          aria-valuemax="10000000"
+          aria-valuenow={simulatorBudget}
+          aria-valuetext={formatINR(simulatorBudget)}
         />
 
         <div className="simulator-breakdown-grid">
@@ -1203,6 +1276,18 @@ function TimelineTab({ event, activePhase, onChangePhase, onOpenAddModal, onRefr
               </button>
             ))}
           </div>
+
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => {
+              API.downloadExport(event.id, "markdown");
+              showToast("Opening Master Celebration & Day-of Run-of-Show Packet...", "info");
+            }}
+            title="Download Day-of Emergency Coordinator & Run-of-Show Kit"
+          >
+            <span>🚨</span> Coordinator Kit
+          </button>
 
           <button type="button" className="btn btn-primary" onClick={onOpenAddModal}>
             <span>➕</span> Add Schedule Item
@@ -1647,6 +1732,23 @@ function GuestsTab({ event, onOpenAddModal, onRefreshEvent, showToast }) {
               🪑 Seating Chart View
             </button>
           </div>
+
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={async () => {
+              try {
+                await API.autoAssignSeating(event.id);
+                await onRefreshEvent();
+                showToast("Auto-grouped unseated attendees into balanced reception tables!", "success");
+              } catch (_) {
+                showToast("Failed to auto-assign tables.", "error");
+              }
+            }}
+            title="Auto-group unseated attendees into balanced tables"
+          >
+            <span>✨</span> Auto-Assign Tables
+          </button>
 
           <button type="button" className="btn btn-primary" onClick={onOpenAddModal}>
             <span>➕</span> Add Guest
@@ -2464,12 +2566,26 @@ function NewEventModal({ onClose, onCreated, showToast }) {
     }
   };
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-event-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <h3>Create New Celebration</h3>
-          <button type="button" className="modal-close-btn" onClick={onClose}>✕</button>
+          <h3 id="new-event-modal-title">Create New Celebration</h3>
+          <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Close dialog">✕</button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
@@ -2629,12 +2745,26 @@ function AddExpenseModal({ eventId, onClose, onAdded, showToast }) {
     }
   };
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-expense-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <h3>Add Budget Expense Item</h3>
-          <button type="button" className="modal-close-btn" onClick={onClose}>✕</button>
+          <h3 id="add-expense-modal-title">Add Budget Expense Item</h3>
+          <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Close dialog">✕</button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
@@ -2738,12 +2868,26 @@ function AddTimelineModal({ eventId, onClose, onAdded, showToast }) {
     }
   };
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-timeline-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <h3>Add Schedule Milestone</h3>
-          <button type="button" className="modal-close-btn" onClick={onClose}>✕</button>
+          <h3 id="add-timeline-modal-title">Add Schedule Milestone</h3>
+          <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Close dialog">✕</button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
@@ -2837,12 +2981,26 @@ function AddVendorModal({ eventId, onClose, onAdded, showToast }) {
     }
   };
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-vendor-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <h3>Add Event Vendor</h3>
-          <button type="button" className="modal-close-btn" onClick={onClose}>✕</button>
+          <h3 id="add-vendor-modal-title">Add Event Vendor</h3>
+          <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Close dialog">✕</button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
@@ -2970,12 +3128,26 @@ function AddGuestModal({ eventId, onClose, onAdded, showToast }) {
     }
   };
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-guest-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <h3>Add Guest to Roster</h3>
-          <button type="button" className="modal-close-btn" onClick={onClose}>✕</button>
+          <h3 id="add-guest-modal-title">Add Guest to Roster</h3>
+          <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Close dialog">✕</button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
@@ -3103,6 +3275,14 @@ function RecordPaymentModal({ eventId, item, type = "budget", onClose, onRecorde
   );
   const [notes, setNotes] = useState(item.notes || "");
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   const numActual = Number(actualAmount) || 0;
   // Cost Variance = Estimated - Actual (Positive = Net Savings/Profit, Negative = Overrun/Loss)

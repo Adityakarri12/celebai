@@ -14,8 +14,8 @@ class Settings(BaseModel):
     app_name: str = "CelebraTech AI - Celebration & Event Planner"
     version: str = "1.0.0"
     debug: bool = False
-    host: str = "127.0.0.1"
-    port: int = 8000
+    host: str = Field(default_factory=lambda: os.getenv("HOST", "0.0.0.0"))
+    port: int = Field(default_factory=lambda: int(os.getenv("PORT", "8000")))
 
     # GenAI Settings
     gemini_api_key: str = Field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
